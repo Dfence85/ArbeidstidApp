@@ -1,0 +1,497 @@
+<!DOCTYPE html>
+<html lang="no">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>Arbeidstid</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Syne:wght@700;800&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+  :root {
+    --bg: #0d0d0f;
+    --surface: #16161a;
+    --surface2: #1e1e24;
+    --border: #2a2a35;
+    --accent: #c8ff00;
+    --accent2: #00d4ff;
+    --danger: #ff4444;
+    --text: #f0f0f0;
+    --muted: #666677;
+    --font-display: 'Syne', sans-serif;
+    --font-mono: 'DM Mono', monospace;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font-mono);
+    min-height: 100vh;
+    padding: 0 0 100px 0;
+    overflow-x: hidden;
+  }
+
+  .header { padding: 48px 24px 24px; position: relative; }
+  .header::after {
+    content: ''; position: absolute; bottom: 0; left: 24px; right: 24px;
+    height: 1px; background: linear-gradient(90deg, var(--accent), transparent);
+  }
+  .header-label { font-size: 10px; letter-spacing: 4px; color: var(--muted); text-transform: uppercase; margin-bottom: 6px; }
+  .header-title { font-family: var(--font-display); font-size: 36px; font-weight: 800; line-height: 1; }
+  .header-title span { color: var(--accent); }
+
+  .clock-section { padding: 28px 24px 0; text-align: center; }
+  .live-clock { font-family: var(--font-display); font-size: 64px; font-weight: 800; letter-spacing: -2px; line-height: 1; }
+  .live-date { font-size: 13px; color: var(--muted); margin-top: 6px; letter-spacing: 2px; text-transform: uppercase; }
+
+  .status-card {
+    margin: 24px 24px 0; background: var(--surface); border: 1px solid var(--border);
+    border-radius: 16px; padding: 20px; display: flex; align-items: center; justify-content: space-between;
+    transition: border-color 0.3s;
+  }
+  .status-card.active { border-color: var(--accent); box-shadow: 0 0 24px rgba(200,255,0,0.08); }
+  .status-label { font-size: 10px; letter-spacing: 3px; color: var(--muted); text-transform: uppercase; margin-bottom: 4px; }
+  .status-value { font-size: 22px; font-weight: 500; }
+  .status-value.highlight { color: var(--accent); }
+  .status-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--muted); transition: background 0.3s; }
+  .status-dot.on { background: var(--accent); box-shadow: 0 0 10px var(--accent); animation: pulse 2s infinite; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+
+  .btn-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 16px 24px 0; }
+  .btn {
+    border: none; border-radius: 14px; padding: 20px 12px;
+    font-family: var(--font-display); font-size: 18px; font-weight: 800;
+    cursor: pointer; transition: transform 0.1s, box-shadow 0.2s;
+    display: flex; flex-direction: column; align-items: center; gap: 4px;
+  }
+  .btn:active { transform: scale(0.96); }
+  .btn-sub { font-family: var(--font-mono); font-size: 10px; font-weight: 400; letter-spacing: 2px; opacity: 0.7; }
+  .btn-inn { background: var(--accent); color: #0d0d0f; }
+  .btn-inn:hover { box-shadow: 0 4px 24px rgba(200,255,0,0.3); }
+  .btn-inn:disabled { background: var(--surface2); color: var(--muted); box-shadow: none; cursor: not-allowed; }
+  .btn-ut { background: var(--surface2); color: var(--text); border: 1px solid var(--border); }
+  .btn-ut.ready { background: var(--accent2); color: #0d0d0f; border-color: var(--accent2); }
+  .btn-ut.ready:hover { box-shadow: 0 4px 24px rgba(0,212,255,0.3); }
+  .btn-ut:disabled { cursor: not-allowed; }
+
+  .total-bar {
+    margin: 16px 24px 0; background: var(--surface); border: 1px solid var(--border);
+    border-radius: 12px; padding: 14px 18px; display: flex; justify-content: space-between; align-items: center;
+  }
+  .total-label { font-size: 11px; color: var(--muted); letter-spacing: 2px; text-transform: uppercase; }
+  .total-value { font-family: var(--font-display); font-size: 22px; font-weight: 800; color: var(--accent2); }
+
+  .section-header { padding: 28px 24px 12px; display: flex; align-items: center; justify-content: space-between; }
+  .section-title { font-family: var(--font-display); font-size: 16px; font-weight: 700; }
+  .section-count { font-size: 11px; color: var(--muted); letter-spacing: 1px; }
+
+  .log-list { padding: 0 24px; display: flex; flex-direction: column; gap: 8px; }
+
+  .log-item {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
+    padding: 14px 16px; display: grid; grid-template-columns: 1fr auto auto auto;
+    align-items: center; gap: 10px; animation: slideIn 0.3s ease;
+  }
+  @keyframes slideIn { from{opacity:0;transform:translateY(-8px)} to{opacity:1;transform:translateY(0)} }
+  .log-date { font-size: 12px; color: var(--muted); letter-spacing: 1px; }
+  .log-times { font-size: 14px; color: var(--text); margin-top: 2px; }
+  .log-hours { font-family: var(--font-display); font-size: 18px; font-weight: 700; color: var(--accent); text-align: right; }
+  .log-hours-label { font-family: var(--font-mono); font-size: 9px; color: var(--muted); text-align: right; letter-spacing: 1px; }
+
+  .log-edit, .log-delete {
+    background: none; border: 1px solid var(--border); border-radius: 8px;
+    width: 28px; height: 28px; cursor: pointer; font-size: 13px;
+    display: flex; align-items: center; justify-content: center;
+    transition: border-color 0.2s, color 0.2s;
+  }
+  .log-edit { color: var(--muted); }
+  .log-edit:hover { border-color: var(--accent2); color: var(--accent2); }
+  .log-delete { color: var(--muted); }
+  .log-delete:hover { border-color: var(--danger); color: var(--danger); }
+
+  .empty-state { text-align: center; padding: 40px 24px; color: var(--muted); font-size: 13px; letter-spacing: 1px; }
+
+  .export-section { padding: 20px 24px 0; }
+  .btn-export {
+    width: 100%; background: var(--surface2); color: var(--text); border: 1px solid var(--border);
+    border-radius: 14px; padding: 18px; font-family: var(--font-display); font-size: 16px; font-weight: 700;
+    cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 10px;
+    transition: border-color 0.2s, color 0.2s;
+  }
+  .btn-export:hover { border-color: var(--accent2); color: var(--accent2); }
+  .btn-export:active { transform: scale(0.98); }
+
+  /* MODAL */
+  .modal-overlay {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.75);
+    backdrop-filter: blur(6px); z-index: 200;
+    display: flex; align-items: flex-end; justify-content: center;
+    opacity: 0; pointer-events: none; transition: opacity 0.25s;
+  }
+  .modal-overlay.open { opacity: 1; pointer-events: all; }
+
+  .modal {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 24px 24px 0 0; padding: 28px 24px 48px;
+    width: 100%; max-width: 480px;
+    transform: translateY(100%); transition: transform 0.3s cubic-bezier(0.34,1.2,0.64,1);
+  }
+  .modal-overlay.open .modal { transform: translateY(0); }
+
+  .modal-handle { width: 36px; height: 4px; background: var(--border); border-radius: 2px; margin: 0 auto 24px; }
+  .modal-title { font-family: var(--font-display); font-size: 20px; font-weight: 800; margin-bottom: 4px; }
+  .modal-date { font-size: 12px; color: var(--muted); letter-spacing: 2px; margin-bottom: 24px; }
+
+  .time-pickers { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 20px; }
+  .picker-group { display: flex; flex-direction: column; gap: 8px; }
+  .picker-label { font-size: 10px; letter-spacing: 3px; color: var(--muted); text-transform: uppercase; }
+
+  .time-picker {
+    display: flex; align-items: center; justify-content: center;
+    background: var(--surface2); border: 1px solid var(--border); border-radius: 14px;
+    padding: 12px 6px; gap: 2px;
+  }
+
+  .picker-col { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+  .picker-val {
+    font-family: var(--font-display); font-size: 30px; font-weight: 800;
+    color: var(--text); min-width: 44px; text-align: center; user-select: none;
+  }
+  .picker-sep { font-family: var(--font-display); font-size: 28px; font-weight: 800; color: var(--muted); padding: 0 2px; margin-bottom: 2px; }
+
+  .picker-btn {
+    background: none; border: 1px solid var(--border); border-radius: 8px;
+    color: var(--muted); width: 36px; height: 30px; cursor: pointer; font-size: 14px;
+    display: flex; align-items: center; justify-content: center;
+    transition: border-color 0.15s, color 0.15s;
+  }
+  .picker-btn:active { border-color: var(--accent); color: var(--accent); transform: scale(0.9); }
+
+  .hint-text { font-size: 11px; color: var(--muted); text-align: center; letter-spacing: 1px; margin-bottom: 16px; }
+
+  .modal-error { font-size: 12px; color: var(--danger); text-align: center; margin-bottom: 12px; min-height: 18px; letter-spacing: 1px; }
+
+  .modal-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .btn-cancel {
+    background: var(--surface2); color: var(--muted); border: 1px solid var(--border);
+    border-radius: 12px; padding: 16px; font-family: var(--font-display); font-size: 15px;
+    font-weight: 700; cursor: pointer; transition: border-color 0.2s, color 0.2s;
+  }
+  .btn-cancel:hover { border-color: var(--muted); color: var(--text); }
+  .btn-save {
+    background: var(--accent); color: #0d0d0f; border: none;
+    border-radius: 12px; padding: 16px; font-family: var(--font-display); font-size: 15px;
+    font-weight: 800; cursor: pointer; transition: box-shadow 0.2s;
+  }
+  .btn-save:hover { box-shadow: 0 4px 20px rgba(200,255,0,0.35); }
+  .btn-save:active { transform: scale(0.97); }
+
+  .toast {
+    position: fixed; bottom: 30px; left: 50%;
+    transform: translateX(-50%) translateY(80px);
+    background: var(--accent); color: #0d0d0f;
+    padding: 12px 24px; border-radius: 100px;
+    font-family: var(--font-display); font-size: 14px; font-weight: 700;
+    transition: transform 0.3s cubic-bezier(0.34,1.56,0.64,1);
+    z-index: 300; white-space: nowrap;
+  }
+  .toast.show { transform: translateX(-50%) translateY(0); }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="header-label">Tidsregistrering</div>
+  <div class="header-title">Arbeids<span>tid</span></div>
+</div>
+
+<div class="clock-section">
+  <div class="live-clock" id="clock">--:--:--</div>
+  <div class="live-date" id="dateDisplay">--</div>
+</div>
+
+<div class="status-card" id="statusCard">
+  <div>
+    <div class="status-label">Status</div>
+    <div class="status-value" id="statusText">Ikke innlogget</div>
+  </div>
+  <div class="status-dot" id="statusDot"></div>
+</div>
+
+<div class="btn-row">
+  <button class="btn btn-inn" id="btnInn" onclick="sjekkInn()">
+    ▶ INN
+    <span class="btn-sub">START DAG</span>
+  </button>
+  <button class="btn btn-ut" id="btnUt" onclick="sjekkUt()" disabled>
+    ■ UT
+    <span class="btn-sub">AVSLUTT DAG</span>
+  </button>
+</div>
+
+<div class="total-bar">
+  <span class="total-label">Total denne uken</span>
+  <span class="total-value" id="totalHours">0,0 t</span>
+</div>
+
+<div class="section-header">
+  <span class="section-title">Logg</span>
+  <span class="section-count" id="logCount">0 dager</span>
+</div>
+
+<div class="log-list" id="logList">
+  <div class="empty-state">Ingen registreringer ennå.<br>Trykk INN for å starte.</div>
+</div>
+
+<div class="export-section">
+  <button class="btn-export" onclick="exporterExcel()">↓ Last ned Excel-fil</button>
+</div>
+
+<!-- EDIT MODAL -->
+<div class="modal-overlay" id="modalOverlay" onclick="lukkModalOverlay(event)">
+  <div class="modal">
+    <div class="modal-handle"></div>
+    <div class="modal-title">Rediger tid</div>
+    <div class="modal-date" id="modalDate">--</div>
+
+    <div class="time-pickers">
+      <div class="picker-group">
+        <div class="picker-label">Inn</div>
+        <div class="time-picker">
+          <div class="picker-col">
+            <button class="picker-btn" onclick="justerTime('inn','h',1)">▲</button>
+            <div class="picker-val" id="innH">08</div>
+            <button class="picker-btn" onclick="justerTime('inn','h',-1)">▼</button>
+          </div>
+          <div class="picker-sep">:</div>
+          <div class="picker-col">
+            <button class="picker-btn" onclick="justerTime('inn','m',1)">▲</button>
+            <div class="picker-val" id="innM">00</div>
+            <button class="picker-btn" onclick="justerTime('inn','m',-1)">▼</button>
+          </div>
+        </div>
+      </div>
+      <div class="picker-group">
+        <div class="picker-label">Ut</div>
+        <div class="time-picker">
+          <div class="picker-col">
+            <button class="picker-btn" onclick="justerTime('ut','h',1)">▲</button>
+            <div class="picker-val" id="utH">16</div>
+            <button class="picker-btn" onclick="justerTime('ut','h',-1)">▼</button>
+          </div>
+          <div class="picker-sep">:</div>
+          <div class="picker-col">
+            <button class="picker-btn" onclick="justerTime('ut','m',1)">▲</button>
+            <div class="picker-val" id="utM">00</div>
+            <button class="picker-btn" onclick="justerTime('ut','m',-1)">▼</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="hint-text">Minutter stilles i 30-minutters intervaller</div>
+    <div class="modal-error" id="modalError"></div>
+
+    <div class="modal-actions">
+      <button class="btn-cancel" onclick="lukkModal()">Avbryt</button>
+      <button class="btn-save" onclick="lagreEndring()">Lagre</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+  let logg = JSON.parse(localStorage.getItem('arbeidstid_logg') || '[]');
+  let innTid = localStorage.getItem('arbeidstid_inn') || null;
+  let redigerIdx = null;
+  let modal = { innH: 8, innM: 0, utH: 16, utM: 0 };
+
+  function lagreLogg() { localStorage.setItem('arbeidstid_logg', JSON.stringify(logg)); }
+  function lagreInn() {
+    if (innTid) localStorage.setItem('arbeidstid_inn', innTid);
+    else localStorage.removeItem('arbeidstid_inn');
+  }
+
+  function pad(n) { return String(n).padStart(2,'0'); }
+  function formaterTid(dato) { return dato.toTimeString().slice(0,5); }
+  function formaterDato(dato) {
+    return dato.toLocaleDateString('no-NO', { weekday:'short', day:'2-digit', month:'short', year:'numeric' });
+  }
+  function regnTimer(innStr, utStr) {
+    const [ih,im] = innStr.split(':').map(Number);
+    const [uh,um] = utStr.split(':').map(Number);
+    return ((uh*60+um)-(ih*60+im))/60;
+  }
+
+  function oppdaterUI() {
+    const dot = document.getElementById('statusDot');
+    const card = document.getElementById('statusCard');
+    const statusText = document.getElementById('statusText');
+    const btnInn = document.getElementById('btnInn');
+    const btnUt = document.getElementById('btnUt');
+
+    if (innTid) {
+      dot.classList.add('on'); card.classList.add('active');
+      statusText.innerHTML = `<span class="highlight">INN ${innTid}</span>`;
+      btnInn.disabled = true; btnUt.disabled = false; btnUt.classList.add('ready');
+    } else {
+      dot.classList.remove('on'); card.classList.remove('active');
+      statusText.textContent = 'Ikke innlogget';
+      btnInn.disabled = false; btnUt.disabled = true; btnUt.classList.remove('ready');
+    }
+
+    const list = document.getElementById('logList');
+    document.getElementById('logCount').textContent = logg.length + ' dag' + (logg.length !== 1 ? 'er' : '');
+
+    if (logg.length === 0) {
+      list.innerHTML = '<div class="empty-state">Ingen registreringer ennå.<br>Trykk INN for å starte.</div>';
+    } else {
+      list.innerHTML = [...logg].reverse().map((item, i) => {
+        const idx = logg.length - 1 - i;
+        const timer = regnTimer(item.inn, item.ut);
+        return `
+          <div class="log-item">
+            <div>
+              <div class="log-date">${item.dato}</div>
+              <div class="log-times">${item.inn} → ${item.ut}</div>
+            </div>
+            <div>
+              <div class="log-hours">${timer.toFixed(1)}</div>
+              <div class="log-hours-label">timer</div>
+            </div>
+            <button class="log-edit" onclick="apneModal(${idx})" title="Rediger">✎</button>
+            <button class="log-delete" onclick="slettRad(${idx})" title="Slett">✕</button>
+          </div>`;
+      }).join('');
+    }
+
+    const total = logg.reduce((sum, item) => sum + regnTimer(item.inn, item.ut), 0);
+    document.getElementById('totalHours').textContent = total.toFixed(1).replace('.', ',') + ' t';
+  }
+
+  function sjekkInn() {
+    innTid = formaterTid(new Date());
+    lagreInn(); oppdaterUI();
+    visToast('✓ Innsjekk ' + innTid);
+  }
+
+  function sjekkUt() {
+    const naa = new Date();
+    logg.push({
+      dato: formaterDato(naa),
+      datoISO: naa.toISOString().slice(0,10),
+      inn: innTid,
+      ut: formaterTid(naa)
+    });
+    lagreLogg(); innTid = null; lagreInn(); oppdaterUI();
+    visToast('✓ Utsjekk ' + logg[logg.length-1].ut);
+  }
+
+  function slettRad(idx) {
+    logg.splice(idx,1); lagreLogg(); oppdaterUI();
+    visToast('Rad slettet');
+  }
+
+  // ── Modal ──
+  function apneModal(idx) {
+    redigerIdx = idx;
+    const item = logg[idx];
+    const [ih,im] = item.inn.split(':').map(Number);
+    const [uh,um] = item.ut.split(':').map(Number);
+    // Round minutes to nearest 30
+    modal = {
+      innH: ih, innM: im >= 15 && im < 45 ? 30 : 0,
+      utH: uh,  utM:  um >= 15 && um < 45 ? 30 : 0
+    };
+    document.getElementById('modalDate').textContent = item.dato;
+    document.getElementById('modalError').textContent = '';
+    syncPickerUI();
+    document.getElementById('modalOverlay').classList.add('open');
+  }
+
+  function lukkModal() {
+    document.getElementById('modalOverlay').classList.remove('open');
+    redigerIdx = null;
+  }
+  function lukkModalOverlay(e) {
+    if (e.target === document.getElementById('modalOverlay')) lukkModal();
+  }
+
+  function syncPickerUI() {
+    document.getElementById('innH').textContent = pad(modal.innH);
+    document.getElementById('innM').textContent = pad(modal.innM);
+    document.getElementById('utH').textContent  = pad(modal.utH);
+    document.getElementById('utM').textContent  = pad(modal.utM);
+  }
+
+  function justerTime(type, del, dir) {
+    document.getElementById('modalError').textContent = '';
+    if (del === 'h') {
+      modal[type+'H'] = (modal[type+'H'] + dir + 24) % 24;
+    } else {
+      // Toggle 00 <-> 30, carry hour if needed
+      const wasZero = modal[type+'M'] === 0;
+      if (dir === 1) {
+        if (wasZero) { modal[type+'M'] = 30; }
+        else { modal[type+'M'] = 0; modal[type+'H'] = (modal[type+'H'] + 1) % 24; }
+      } else {
+        if (!wasZero) { modal[type+'M'] = 0; }
+        else { modal[type+'M'] = 30; modal[type+'H'] = (modal[type+'H'] - 1 + 24) % 24; }
+      }
+    }
+    syncPickerUI();
+  }
+
+  function lagreEndring() {
+    const innStr = pad(modal.innH) + ':' + pad(modal.innM);
+    const utStr  = pad(modal.utH)  + ':' + pad(modal.utM);
+    if (regnTimer(innStr, utStr) <= 0) {
+      document.getElementById('modalError').textContent = '⚠ Ut-tid må være etter inn-tid';
+      return;
+    }
+    logg[redigerIdx].inn = innStr;
+    logg[redigerIdx].ut  = utStr;
+    lagreLogg(); oppdaterUI(); lukkModal();
+    visToast('✓ Tid oppdatert');
+  }
+
+  // ── Excel ──
+  function exporterExcel() {
+    if (logg.length === 0) { visToast('Ingen data å eksportere'); return; }
+    const data = logg.map(item => ({
+      'Dato': item.datoISO, 'Dag': item.dato,
+      'Inn': item.inn, 'Ut': item.ut,
+      'Timer': parseFloat(regnTimer(item.inn, item.ut).toFixed(2))
+    }));
+    const total = data.reduce((s,r) => s+r['Timer'], 0);
+    data.push({ 'Dato':'', 'Dag':'TOTALT', 'Inn':'', 'Ut':'', 'Timer': parseFloat(total.toFixed(2)) });
+    const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.json_to_sheet(data);
+    ws['!cols'] = [{wch:12},{wch:22},{wch:8},{wch:8},{wch:10}];
+    XLSX.utils.book_append_sheet(wb, ws, 'Arbeidstid');
+    XLSX.writeFile(wb, 'arbeidstid.xlsx');
+    visToast('✓ Excel lastet ned!');
+  }
+
+  function visToast(msg) {
+    const t = document.getElementById('toast');
+    t.textContent = msg;
+    t.classList.add('show');
+    setTimeout(() => t.classList.remove('show'), 2200);
+  }
+
+  function oppdaterKlokke() {
+    const naa = new Date();
+    document.getElementById('clock').textContent = naa.toTimeString().slice(0,8);
+    document.getElementById('dateDisplay').textContent = formaterDato(naa);
+  }
+  setInterval(oppdaterKlokke, 1000);
+  oppdaterKlokke();
+  oppdaterUI();
+</script>
+</body>
+</html>
